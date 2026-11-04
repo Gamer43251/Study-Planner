@@ -1,0 +1,39 @@
+body {
+  background: #f3f5f8;
+  color: #1c2834;
+}
+
+.planner-navbar {
+  background: #1f3a5f;
+}
+
+.planner-navbar .navbar-brand,
+.planner-navbar .nav-link {
+  color: #f7f9fb;
+}
+
+.planner-navbar .nav-link:hover,
+.planner-navbar .nav-link.active {
+  color: #ffffff;
+}
+
+.page-heading {
+  margin: 1.5rem 0 1rem;
+}
+
+.module-card {
+  height: 100%;
+  border: 1px solid #d7dee6;
+}
+
+.empty-state {
+  background: #ffffff;
+  border: 1px dashed #c5ced8;
+  border-radius: 0.5rem;
+  padding: 2rem 1.5rem;
+  text-align: center;
+}
+
+.task-table {
+  background: #ffffff;
+}
