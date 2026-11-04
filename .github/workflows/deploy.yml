@@ -1,0 +1,110 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: us-east-1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: us-east-1
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Prepare Terraform state bucket
+        id: state
+        run: |
+          set -euo pipefail
+          account=$(aws sts get-caller-identity --query Account --output text)
+          bucket="study-planner-tfstate-${account}"
+          if ! aws s3api head-bucket --bucket "$bucket" 2>/dev/null; then
+            aws s3api create-bucket --bucket "$bucket" --region "$AWS_REGION"
+          fi
+          echo "bucket=$bucket" >> "$GITHUB_OUTPUT"
+
+      - name: Terraform apply
+        working-directory: infra
+        run: |
+          set -euo pipefail
+          terraform init -input=false -backend-config="bucket=${{ steps.state.outputs.bucket }}"
+          terraform apply -input=false -auto-approve -var="confirm_budget=true"
+
+      - name: Publish the React site
+        working-directory: frontend
+        run: |
+          set -euo pipefail
+          api_url=$(terraform -chdir=../infra output -raw api_url)
+          bucket=$(terraform -chdir=../infra output -raw frontend_bucket)
+          npm ci
+          VITE_API_URL="$api_url" npm run build
+          aws s3 sync dist "s3://${bucket}" --delete
+
+      - name: Publish the API container
+        run: |
+          set -euo pipefail
+          artifacts=$(terraform -chdir=infra output -raw artifacts_bucket)
+          instance_id=$(terraform -chdir=infra output -raw instance_id)
+          website_url=$(terraform -chdir=infra output -raw website_url)
+          db_password=$(terraform -chdir=infra output -raw postgres_password)
+          api_url=$(terraform -chdir=infra output -raw api_url)
+          rm -f backend.zip
+          (
+            cd backend
+            zip -r ../backend.zip app progresslib requirements.txt Dockerfile docker-compose.yml scripts
+          )
+          aws s3 cp backend.zip "s3://${artifacts}/backend.zip"
+          presign=$(aws s3 presign "s3://${artifacts}/backend.zip" --expires-in 3600)
+          aws ec2 wait instance-status-ok --instance-ids "$instance_id"
+          online=false
+          for _ in $(seq 1 30); do
+            status=$(aws ssm describe-instance-information \
+              --filters "Key=InstanceIds,Values=${instance_id}" \
+              --query "InstanceInformationList[0].PingStatus" \
+              --output text)
+            if [ "$status" = "Online" ]; then
+              online=true
+              break
+            fi
+            sleep 10
+          done
+          if [ "$online" != "true" ]; then
+            echo "The instance did not register with Systems Manager."
+            exit 1
+          fi
+          script=$(cat <<EOF
+          #!/bin/bash
+          set -euo pipefail
+          curl -fsSL '${presign}' -o /tmp/backend.zip
+          dnf install -y unzip
+          rm -rf /opt/planner
+          mkdir -p /opt/planner
+          unzip -o /tmp/backend.zip -d /opt/planner
+          chmod +x /opt/planner/scripts/start.sh
+          POSTGRES_PASSWORD='${db_password}' CORS_ORIGINS='${website_url}' /opt/planner/scripts/start.sh
+          EOF
+          )
+          encoded=$(printf '%s\n' "$script" | base64 -w 0)
+          jq -n --arg encoded "$encoded" '{commands: ["echo " + $encoded + " | base64 -d > /tmp/study-planner-deploy.sh", "bash /tmp/study-planner-deploy.sh"]}' > ssm-params.json
+          command_id=$(aws ssm send-command \
+            --instance-ids "$instance_id" \
+            --document-name AWS-RunShellScript \
+            --comment "study-planner deploy" \
+            --parameters file://ssm-params.json \
+            --query "Command.CommandId" \
+            --output text)
+          aws ssm wait command-executed --command-id "$command_id" --instance-id "$instance_id"
+          echo "Website: ${website_url}"
+          echo "API: ${api_url}"
