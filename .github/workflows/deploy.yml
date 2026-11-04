@@ -40,11 +40,39 @@ jobs:
           fi
           echo "bucket=$bucket" >> "$GITHUB_OUTPUT"
 
+      - name: Prepare website and artifact buckets
+        run: |
+          set -euo pipefail
+          account=$(aws sts get-caller-identity --query Account --output text)
+          web="study-planner-web-${account}"
+          artifacts="study-planner-artifacts-${account}"
+          for name in "$web" "$artifacts"; do
+            if ! aws s3api head-bucket --bucket "$name" 2>/dev/null; then
+              aws s3api create-bucket --bucket "$name" --region "$AWS_REGION"
+            fi
+          done
+          aws s3api put-public-access-block --bucket "$web" --public-access-block-configuration BlockPublicAcls=false,IgnorePublicAcls=false,BlockPublicPolicy=false,RestrictPublicBuckets=false
+          aws s3api put-bucket-website --bucket "$web" --website-configuration '{"IndexDocument":{"Suffix":"index.html"},"ErrorDocument":{"Key":"index.html"}}'
+          aws s3api put-bucket-policy --bucket "$web" --policy "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"PublicReadWebsite\",\"Effect\":\"Allow\",\"Principal\":\"*\",\"Action\":\"s3:GetObject\",\"Resource\":\"arn:aws:s3:::${web}/*\"}]}"
+          aws s3api put-public-access-block --bucket "$artifacts" --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+
       - name: Terraform apply
         working-directory: infra
         run: |
           set -euo pipefail
           terraform init -input=false -backend-config="bucket=${{ steps.state.outputs.bucket }}"
+          for addr in \
+            aws_s3_bucket.frontend \
+            aws_s3_bucket.artifacts \
+            aws_s3_bucket_public_access_block.frontend \
+            aws_s3_bucket_public_access_block.artifacts \
+            aws_s3_bucket_website_configuration.frontend \
+            aws_s3_bucket_policy.frontend
+          do
+            if terraform state list | grep -qx "$addr"; then
+              terraform state rm "$addr"
+            fi
+          done
           terraform apply -input=false -auto-approve -var="confirm_budget=true"
 
       - name: Publish the React site
@@ -72,6 +100,7 @@ jobs:
           )
           aws s3 cp backend.zip "s3://${artifacts}/backend.zip"
           presign=$(aws s3 presign "s3://${artifacts}/backend.zip" --expires-in 3600)
+          aws ec2 start-instances --instance-ids "$instance_id"
           aws ec2 wait instance-status-ok --instance-ids "$instance_id"
           online=false
           for _ in $(seq 1 30); do

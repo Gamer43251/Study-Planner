@@ -1,13 +1,13 @@
 output "frontend_bucket" {
-  value = aws_s3_bucket.frontend.bucket
+  value = local.frontend_bucket
 }
 
 output "artifacts_bucket" {
-  value = aws_s3_bucket.artifacts.bucket
+  value = local.artifacts_bucket
 }
 
 output "website_url" {
-  value = "http://${aws_s3_bucket_website_configuration.frontend.website_endpoint}"
+  value = "http://${local.frontend_bucket}.s3-website-${var.aws_region}.amazonaws.com"
 }
 
 output "api_url" {

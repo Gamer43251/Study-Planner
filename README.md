@@ -42,7 +42,7 @@ The API tests were committed before the implementation. The progress calculation
 
 The Learner Lab budget is $50. Region `us-east-1`. EC2 and S3 are allowed. CloudFront is not. IAM users and roles cannot be created. The lab already has `LabInstanceProfile` and the `vockey` key pair. Credentials include a session token and expire when the lab session ends.
 
-Terraform in `infra/` describes one `t3.micro` instance, a 20 GB gp3 volume for PostgreSQL, an Elastic IP, a public S3 website bucket, and a private artifacts bucket. It refuses to create those resources unless `confirm_budget=true`.
+Terraform in `infra/` describes one `t3.micro` instance, a 20 GB gp3 volume for PostgreSQL, and an Elastic IP. It refuses to create those resources unless `confirm_budget=true`. The Deploy workflow creates the public website bucket and the private artifacts bucket with the AWS CLI, because the lab denies the object-lock check that Terraform's S3 resource performs.
 
 Do not run Terraform, and do not start the Deploy workflow, until you mean to spend the budget. A running EC2 instance costs money, and the next **Start Lab** turns stopped instances back on. Stop the instance in the EC2 console when you finish for the day, then stop it again after you next start a lab session if you are not using it.
 
