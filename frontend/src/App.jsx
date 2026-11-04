@@ -1,5 +1,6 @@
 import { Route, Routes } from "react-router-dom";
 import Layout from "./components/Layout";
+import DashboardPage from "./pages/DashboardPage";
 import ModuleDetailPage from "./pages/ModuleDetailPage";
 import ModuleFormPage from "./pages/ModuleFormPage";
 import ModuleListPage from "./pages/ModuleListPage";
@@ -10,6 +11,7 @@ export default function App() {
     <Routes>
       <Route element={<Layout />}>
         <Route index element={<ModuleListPage />} />
+        <Route path="dashboard" element={<DashboardPage />} />
         <Route path="modules/new" element={<ModuleFormPage />} />
         <Route path="modules/:moduleId/edit" element={<ModuleFormPage />} />
         <Route path="modules/:moduleId/tasks/new" element={<TaskFormPage />} />

@@ -15,6 +15,9 @@ export default function Layout() {
               <Nav.Link as={NavLink} to="/" end>
                 Modules
               </Nav.Link>
+              <Nav.Link as={NavLink} to="/dashboard">
+                Dashboard
+              </Nav.Link>
             </Nav>
           </Navbar.Collapse>
         </Container>

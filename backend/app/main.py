@@ -1,4 +1,5 @@
 import os
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
@@ -7,7 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import Base, engine, get_db
-from app.routers import modules, tasks
+from app.routers import dashboard, modules, tasks
 
 
 def cors_origins() -> list[str]:
@@ -24,7 +25,17 @@ def cors_origins() -> list[str]:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    Base.metadata.create_all(bind=engine)
+    last_error = None
+    for _attempt in range(30):
+        try:
+            Base.metadata.create_all(bind=engine)
+            last_error = None
+            break
+        except Exception as exc:
+            last_error = exc
+            time.sleep(2)
+    if last_error is not None:
+        raise last_error
     yield
 
 
@@ -37,6 +48,7 @@ app.add_middleware(
 )
 app.include_router(modules.router)
 app.include_router(tasks.router)
+app.include_router(dashboard.router)
 
 
 @app.get("/health")
